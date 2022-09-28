@@ -18,10 +18,24 @@ resource "aws_vpc" "main" {
 
 resource "aws_subnet" "public" {
   vpc_id     = aws_vpc.main.id
-  cidr_block = "10.10.0.0/24"
+  cidr_block = "10.10.1.0/24"
+  availability_zone = "eu-central-1a"
 
   tags = {
     Name = "PublicSubnet"
+  }
+}
+
+#creating public subnet 2!!!!
+#resources form https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet
+
+resource "aws_subnet" "public2" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.10.100.0/24"
+  availability_zone = "eu-central-1b"
+
+  tags = {
+    Name = "PublicSubnet2"
   }
 }
 
@@ -30,10 +44,24 @@ resource "aws_subnet" "public" {
 
 resource "aws_subnet" "private"{
   vpc_id     = aws_vpc.main.id
-  cidr_block = "10.10.1.0/24"
+  cidr_block    = "10.10.3.0/24"
+  availability_zone = "eu-central-1a"
 
   tags = {
     Name = "PrivateSubnet"
+  }
+}
+
+#creating private subnet2!!!!!!!
+#resources form https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet
+
+resource "aws_subnet" "private2"{
+  vpc_id     = aws_vpc.main.id
+  cidr_block    = "10.10.200.0/24"
+  availability_zone = "eu-central-1b"
+
+  tags = {
+    Name = "PrivateSubnet2"
   }
 }
 
@@ -94,6 +122,32 @@ resource "aws_route_table" "public" {
 resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
+
+}
+
+#route table for public2!!!!!!!!!!!!!!
+#resources from https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table
+
+resource "aws_route_table" "public2" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "PublicRouteTable2"
+  }
+}
+
+#association publicSubnet to PublicRouteTable222222!!!!!!!!!11
+#resources from https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table_association
+
+resource "aws_route_table_association" "public2" {
+  subnet_id      = aws_subnet.public2.id
+  route_table_id = aws_route_table.public2.id
+
 }
 
 #route table for private
@@ -118,4 +172,99 @@ resource "aws_route_table" "private" {
 resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private.id
   route_table_id = aws_route_table.private.id
+}
+
+#route table for private  2!!!!!!!!!!!1
+#resources from https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table
+
+resource "aws_route_table" "private2" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_nat_gateway.nat.id
+  }
+
+  tags = {
+    Name = "PrivateRouteTable2"
+  }
+}
+
+#association privateSubnet to privateRouteTable
+#resources from https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table_association
+
+resource "aws_route_table_association" "private2" {
+  subnet_id      = aws_subnet.private2.id
+  route_table_id = aws_route_table.private2.id
+}
+
+#creating ec2 instance to private subnet
+
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "root-device-type"
+    values = ["ebs"]
+  }
+
+  owners = ["amazon"] # Canonical
+}
+
+resource "aws_instance" "web" {
+  ami             = data.aws_ami.amazon_linux.id
+  instance_type   = "t2.micro"
+  key_name        = var.key_name
+  subnet_id	  = "${aws_subnet.private.id}"
+
+  tags = {
+    Name = "vpcteraform"
+  }
+}
+
+resource "aws_instance" "web2" {
+  ami             = data.aws_ami.amazon_linux.id
+  instance_type   = "t2.micro"
+  key_name        = var.key_name
+  subnet_id       = "${aws_subnet.private2.id}"
+
+  tags = {
+    Name = "vpcteraform"
+  }
+}
+
+resource "aws_security_group" "TerraformEc2Security" {
+  name        = "TerraformEc2Security"
+  description = "Allow Inbound Traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description      = "hope to work"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks      = [aws_vpc.main.cidr_block]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  tags = {
+    Name = "terraformEc2"
+  }
 }
