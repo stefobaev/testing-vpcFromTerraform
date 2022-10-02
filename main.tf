@@ -20,6 +20,7 @@ resource "aws_subnet" "public" {
   vpc_id     = aws_vpc.main.id
   cidr_block = "10.0.1.0/24"
   availability_zone = "eu-central-1a"
+  map_public_ip_on_launch = true
 
   tags = {
     Name = "PublicSubnet"
@@ -130,7 +131,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_route_table" "public2" {
   vpc_id = aws_vpc.main.id
-
+  
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.igw.id
@@ -200,6 +201,7 @@ resource "aws_route_table_association" "private2" {
 
 #creating ec2 instance to private subnet
 
+
 data "aws_ami" "amazon_linux" {
   most_recent = true
 
@@ -226,16 +228,20 @@ resource "aws_instance" "web" {
   instance_type   = "t2.micro"
   key_name        = var.key_name
   subnet_id	  = "${aws_subnet.private.id}"
+  security_groups = [aws_security_group.TerraformEc2Security.id]
   user_data       = <<EOF
-  #!/bin/bash
-  sudo apt-get update -y
-  sudo apt-get install apache2 -y
-  echo "THIS IS WEB SERVER FROM 10.0.3.0 SUBNET" > /var/www/htpd/index.html
+  sudo yum -y update
+  sudo yum -y install httpd
+  sudo touch /var/www/html/index.html  
+  echo "THIS IS WEB SERVER FROM 10.0.3.0/24 SUBNET" > /var/www/html/index.html
   EOF
 
   tags = {
     Name = "vpcWebServerFromTeraform"
   }
+  depends_on = [
+    aws_nat_gateway.nat
+  ]
 }
 
 resource "aws_instance" "web2" {
@@ -243,17 +249,55 @@ resource "aws_instance" "web2" {
   instance_type   = "t2.micro"
   key_name        = var.key_name
   subnet_id       = "${aws_subnet.private2.id}"
-  user_data       = <<EOF
-  #!/bin/bash
-  sudo apt-get update -y
-  sudo apt-get install apache2 -y
-  echo "THIS IS WEB SERVER FROM 10.0.200.0 SUBNET" > /var/www/htpd/index.html
-  EOF
+  security_groups = [aws_security_group.TerraformEc2Security.id]
+  user_data       = "${file("apache_install.sh")}" 
 
   tags = {
     Name = "vpcSECONDWEBSERVERFROMTeraform"
   }
+  depends_on = [
+    aws_nat_gateway.nat
+  ]
 }
+
+resource "aws_instance" "bastion" {
+  ami             = data.aws_ami.amazon_linux.id
+  instance_type   = "t2.micro"
+  key_name        = var.key_name
+  subnet_id       = "${aws_subnet.public.id}"
+  security_groups = [aws_security_group.bastion.id]
+
+  tags = {
+    Name = "bastion"
+  }
+}
+
+
+resource "aws_security_group" "bastion" {
+  name        = "bastion"
+  description = "Allow Inbound Traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description      = "bastion"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks	     = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "bastion"
+  }
+}
+
 
 resource "aws_security_group" "TerraformEc2Security" {
   name        = "TerraformEc2Security"
@@ -268,12 +312,19 @@ resource "aws_security_group" "TerraformEc2Security" {
     cidr_blocks      = [aws_vpc.main.cidr_block]
   }
 
+  ingress {
+    description      = "http"
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = [aws_vpc.main.cidr_block]
+  }
+
   egress {
     from_port        = 0
     to_port          = 0
     protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
+    security_groups  = [aws_security_group.bastion.id]
   }
 
   tags = {
@@ -281,37 +332,17 @@ resource "aws_security_group" "TerraformEc2Security" {
   }
 }
 
-#crating load balancer!!!!!!!
+#crating application load balancer!!!!!!!
 
 
-resource "aws_elb" "LB" {
-  name               = "loadBalancer"
-  availability_zones = ["eu-central-1a", "eu-central-1b"]
-
-  listener {
-    instance_port     = 80
-    instance_protocol = "http"
-    lb_port           = 80
-    lb_protocol       = "http"
-  }
-
-  health_check {
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
-    target		= "HTTP:80/"
-    interval		= 30
-  }
-
-
-#elastic load balancer attachments!!!!!!!!!!!
-
-
-  instances                  = ["${aws_instance.web.id}", "${aws_instance.web2.id}"]
-  cross_zone_load_balancing  = true
-  idle_timeout               = 40
+resource "aws_lb" "LB" {
+  name               = "loadbalancer"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.TerraformEc2Security.id]
+  subnets            = [aws_subnet.private.id, aws_subnet.private2.id]
 
   tags = {
-    Name = "Load-Balancer"
+    Name = "ujs"
   }
 }
