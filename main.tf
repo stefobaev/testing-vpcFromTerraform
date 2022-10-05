@@ -18,8 +18,8 @@ resource "aws_vpc" "main" {
 
 resource "aws_subnet" "public" {
   vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
-  availability_zone = "eu-central-1a"
+  cidr_block = var.cidr_block_public_subnet1
+  availability_zone = var.AZone1
   map_public_ip_on_launch = true
 
   tags = {
@@ -32,8 +32,8 @@ resource "aws_subnet" "public" {
 
 resource "aws_subnet" "public2" {
   vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.100.0/24"
-  availability_zone = "eu-central-1b"
+  cidr_block = var.cidr_block_public_subnet2
+  availability_zone = var.AZone2
 
   tags = {
     Name = "PublicSubnet2"
@@ -45,8 +45,8 @@ resource "aws_subnet" "public2" {
 
 resource "aws_subnet" "private"{
   vpc_id     = aws_vpc.main.id
-  cidr_block    = "10.0.3.0/24"
-  availability_zone = "eu-central-1a"
+  cidr_block    = var.cidr_block_private_subnet1
+  availability_zone = var.AZone1
 
   tags = {
     Name = "PrivateSubnet"
@@ -58,8 +58,8 @@ resource "aws_subnet" "private"{
 
 resource "aws_subnet" "private2"{
   vpc_id     = aws_vpc.main.id
-  cidr_block    = "10.0.200.0/24"
-  availability_zone = "eu-central-1b"
+  cidr_block    = var.cidr_block_private_subnet2
+  availability_zone = var.AZone2
 
   tags = {
     Name = "PrivateSubnet2"
@@ -108,7 +108,7 @@ resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block = var.default_cidr_block
     gateway_id = aws_internet_gateway.igw.id
   }
 
@@ -133,7 +133,7 @@ resource "aws_route_table" "public2" {
   vpc_id = aws_vpc.main.id
   
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block = var.default_cidr_block
     gateway_id = aws_internet_gateway.igw.id
   }
 
@@ -158,7 +158,7 @@ resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block = var.default_cidr_block
     gateway_id = aws_nat_gateway.nat.id
   }
 
@@ -182,7 +182,7 @@ resource "aws_route_table" "private2" {
   vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block = var.default_cidr_block
     gateway_id = aws_nat_gateway.nat.id
   }
 
@@ -230,17 +230,16 @@ resource "aws_instance" "web" {
   subnet_id	  = "${aws_subnet.private.id}"
   security_groups = [aws_security_group.TerraformEc2Security.id]
   user_data       = <<EOF
-  sudo yum -y update
-  sudo yum -y install httpd
-  sudo touch /var/www/html/index.html  
-  echo "THIS IS WEB SERVER FROM 10.0.3.0/24 SUBNET" > /var/www/html/index.html
+  apt -y update
+  apt -y install apache2  
+  echo "THIS IS WEB SERVER FROM PRIVATE SUBNET" > /var/www/html/index.html
   EOF
 
   tags = {
     Name = "vpcWebServerFromTeraform"
   }
   depends_on = [
-    aws_nat_gateway.nat
+    aws_nat_gateway.nat, aws_internet_gateway.igw
   ]
 }
 
@@ -256,7 +255,7 @@ resource "aws_instance" "web2" {
     Name = "vpcSECONDWEBSERVERFROMTeraform"
   }
   depends_on = [
-    aws_nat_gateway.nat
+    aws_nat_gateway.nat, aws_internet_gateway.igw
   ]
 }
 
@@ -283,14 +282,14 @@ resource "aws_security_group" "bastion" {
     from_port        = 22
     to_port          = 22
     protocol         = "tcp"
-    cidr_blocks	     = ["0.0.0.0/0"]
+    cidr_blocks	     = [var.default_cidr_block]
   }
 
   egress {
     from_port        = 0
     to_port          = 0
     protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
+    cidr_blocks      = [var.default_cidr_block]
   }
 
   tags = {
